@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mistral OCR Text Extractor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #f8f9fa;
+    }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: #fff;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    h1, h2 {
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: bold;
+    }
+    input[type="text"], input[type="file"] {
+      display: block;
+      width: 100%;
+      margin-bottom: 1rem;
+      padding: 0.5rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      display: block;
+      margin: 1rem auto;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 4px;
+      background-color: #007bff;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #status {
+      text-align: center;
+      font-size: 1.1rem;
+      color: #555;
+      margin-bottom: 1rem;
+    }
+    .result-section {
+      margin: 1rem 0;
+      padding: 1rem;
+      background: #e9ecef;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      font-family: Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Mistral OCR Text Extractor</h1>
+    <!-- API-nøkkel inputfelt -->
+    <div>
+      <label for="apiKeyInput">Mistral API Nøkkel:</label>
+      <input type="text" id="apiKeyInput" placeholder="Skriv inn API nøkkel">
+    </div>
+
+    <!-- Seksjon for opplasting av bilder -->
+    <h2>Last opp Bilder</h2>
+    <input type="file" id="fileInput" multiple accept="image/*">
+
+    <!-- Seksjon for PDF URL -->
+    <h2>Lim inn PDF URL</h2>
+    <input type="text" id="pdfUrlInput" placeholder="Skriv inn URL til PDF-fil">
+
+    <button id="processBtn">Prosesser Filer</button>
+    
+    <!-- Statusmelding -->
+    <p id="status"></p>
+    
+    <!-- Outputområde for OCR-resultater -->
+    <div id="output"></div>
+  </div>
+
+  <script>
+    // OCR for bilder – bruker data URL og kaller OCR-endepunktet direkte.
+    async function performImageOCR(apiKey, imageUrl) {
+      const payload = {
+        model: "mistral-ocr-latest",
+        document: {
+          type: "image_url",
+          image_url: imageUrl
+        }
+      };
+
+      try {
+        const response = await fetch("https://api.mistral.ai/v1/ocr", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          throw new Error("HTTP-feil " + response.status);
+        }
+        const data = await response.json();
+        return data.text || JSON.stringify(data, null, 2);
+      } catch (error) {
+        console.error("OCR API-feil (bilde):", error);
+        return "Feil under OCR-behandling av bilde: " + error.message;
+      }
+    }
+
+    // OCR for PDF via URL – kaller OCR-endepunktet med dokumenttypen "document_url".
+    async function performPdfUrlOCR(apiKey, pdfUrl) {
+      const payload = {
+        model: "mistral-ocr-latest",
+        document: {
+          type: "document_url",
+          document_url: pdfUrl
+        }
+      };
+
+      try {
+        const response = await fetch("https://api.mistral.ai/v1/ocr", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          throw new Error("HTTP-feil " + response.status);
+        }
+        const data = await response.json();
+        return data.text || JSON.stringify(data, null, 2);
+      } catch (error) {
+        console.error("OCR API-feil (PDF URL):", error);
+        return "Feil under OCR-behandling av PDF: " + error.message;
+      }
+    }
+
+    document.getElementById('processBtn').addEventListener('click', async function() {
+      const apiKey = document.getElementById('apiKeyInput').value.trim();
+      if (!apiKey) {
+        alert("Vennligst skriv inn API nøkkelen.");
+        return;
+      }
+
+      const fileInput = document.getElementById('fileInput');
+      const pdfUrlInput = document.getElementById('pdfUrlInput');
+      const outputDiv = document.getElementById('output');
+      const statusElement = document.getElementById('status');
+
+      // Tøm outputområdet før ny behandling
+      outputDiv.innerHTML = "";
+      statusElement.textContent = "Prosesserer, vennligst vent...";
+
+      let promises = [];
+
+      // Prosesser opplastede bilder (flere kan velges)
+      const files = fileInput.files;
+      for (const file of files) {
+        if (file.type.startsWith("image/")) {
+          let promise = new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+              try {
+                const imageData = event.target.result;
+                const ocrResult = await performImageOCR(apiKey, imageData);
+                const section = document.createElement('div');
+                section.className = "result-section";
+                section.textContent = ocrResult;
+                outputDiv.appendChild(section);
+                resolve();
+              } catch (e) {
+                resolve();
+              }
+            };
+            reader.onerror = function(e) {
+              resolve();
+            };
+            reader.readAsDataURL(file);
+          });
+          promises.push(promise);
+        } else {
+          const section = document.createElement('div');
+          section.className = "result-section";
+          section.textContent = "Filtype ikke støttet (kun bilder tillatt her): " + file.name;
+          outputDiv.appendChild(section);
+        }
+      }
+
+      // Prosesser PDF URL om feltet ikke er tomt
+      const pdfUrl = pdfUrlInput.value.trim();
+      if (pdfUrl) {
+        let promise = performPdfUrlOCR(apiKey, pdfUrl).then((ocrResult) => {
+          const section = document.createElement('div');
+          section.className = "result-section";
+          section.textContent = ocrResult;
+          outputDiv.appendChild(section);
+        });
+        promises.push(promise);
+      }
+
+      await Promise.all(promises);
+      statusElement.textContent = ""; // Fjern statusmelding når alle er ferdig
+    });
+  </script>
+</body>
+</html>
